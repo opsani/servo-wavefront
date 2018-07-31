@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+
+from measure import Measure, ST_FAILED
+
+import time
+import wavefront_api_client
+import yaml
+
+DESC="Wavefront measure driver for Opsani Optune"
+VERSION="1.0.0"
+HAS_CANCEL=True
+PROGRESS_INTERVAL=5
+
+
+DFLT_WARMUP = 0
+DFLT_DURATION = 120
+DFLT_TIME_AGGR = 'avg'
+DFLT_METRIC_NAME = 'perf'
+DFLT_METRIC_UNIT = ''
+
+AGGR_OPERATORS = ('avg', 'max', 'min', 'sum')
+
+CFG_FILE = "./config.yaml"
+DRIVER_NAME="wavefront"
+
+class WaveFront(Measure):
+
+    # overwrites super:  update progress before printing it
+    def print_progress(
+            self,
+            message=None,
+            msg_index=None,
+            stage=None,
+            stageprogress=None):
+
+        # update progress based on how much time has elapsed
+        t_taken = time.time() - self.t_measure_start
+        self.progress = int(min(100.0, 100.0*((t_taken)/self.t_sleep)))
+        super().print_progress(message, msg_index, stage, stageprogress)
+
+    # overwrites super
+    def handle_cancel(self, signal, frame):
+        err = 'Exiting due to signal: {}'.format(signal)
+        self.print_measure_error(err, ST_FAILED)
+
+        sys.exit(3)
+
+    # overwrites super
+    def describe(self):
+
+        cfg = self._get_driver_cfg()
+
+        metric_name = cfg.get('metric_name', DFLT_METRIC_NAME)
+        metric_unit = cfg.get('metric_unit', DFLT_METRIC_UNIT)
+
+        return {
+            metric_name: {
+                'unit': metric_unit,
+            }
+        }
+
+    # overwrites super
+    def measure(self):
+
+        cfg = self._get_driver_cfg()
+        metric_name = cfg.get('metric_name', DFLT_METRIC_NAME)
+
+        # parse and valcheck:  control configuration
+        control = self.input_data.get('control', {})
+
+        warmup = int(control.get('warmup', cfg.get('warmup', DFLT_WARMUP)))
+        duration = int(control.get(
+            'duration', cfg.get('duration', DFLT_DURATION)))
+
+        assert warmup >= 0 and duration >= 0, \
+            'Both warmup {} and duration {} must be non-negative'.format(
+                warmup, duration)
+
+        time_aggr = cfg.get('time_aggr', DFLT_TIME_AGGR)
+
+        assert time_aggr in AGGR_OPERATORS, \
+            'Unknown time_aggr {}'.format(time_aggr)
+
+        query = cfg["query"]
+
+        # sleep
+        self.t_sleep = warmup + duration
+        self.debug('Sleeping for {:d} seconds ({:d} warmup + {:d} duration)'.format(
+            self.t_sleep, warmup, duration))
+        time.sleep(self.t_sleep)
+
+        # query wavefront: measure
+        val = self._query_wavefront(
+            cfg["api_host"], cfg["api_key"], query, time_aggr, duration,
+            cfg["granularity"], cfg["summarization"])
+
+        # construct result
+        metrics = {
+            metric_name: {
+                'value': val,
+                'annotation': query,
+            }
+        }
+        annotations = {}
+
+        return metrics, annotations
+
+    def _get_wf_values(self,
+            client,
+            query,
+            start_time,
+            end_time,
+            granularity,
+            summarization,
+            strict=True):
+
+        r = client.query_api(
+            query,
+            start_time,
+            granularity,
+            e=end_time,
+            summarization=summarization,
+            strict=strict)
+
+        # Flatten values
+        values =  [d[1] for ts in r.timeseries for d in ts.data]
+
+        return values
+
+
+    def _query_wavefront(self, api_host, api_key, query, time_aggr, duration,
+                         granularity, summarization):
+
+        api_cfg = wavefront_api_client.Configuration()
+        api_cfg.host = api_host
+
+        client = wavefront_api_client.QueryApi(
+            wavefront_api_client.ApiClient(
+                configuration=api_cfg,
+                header_name='Authorization',
+                header_value='Bearer ' + api_key))
+
+        now = int(time.time())
+        start_time = now - duration
+        end_time = now
+
+        try:
+            values = self._get_wf_values(
+                client,
+                query,
+                start_time,
+                end_time,
+                granularity,
+                summarization=summarization,
+                strict=True
+            )
+
+            assert len(values) > 0, \
+                        'Wavefront query returned no data in timeseries'
+
+            # summarize result
+            aggregated_val = self._aggregate_values(values, time_aggr)
+
+            self.debug("DEBUG: timeseries data", start_time, end_time, values,
+                       time_aggr, aggregated_val)
+            return aggregated_val
+
+        except Exception as e:
+            print("Exception when calling QueryApi->query_api: %s\n" % e)
+            raise
+
+    # helper:  return an aggregate value computed from an input list of values
+    def _aggregate_values(self, vals, aggr):
+        if aggr == 'avg':
+            return sum(vals) / float(len(vals))
+        if aggr == 'max':
+            return max(vals)
+        if aggr == 'min':
+            return min(vals)
+        if aggr == 'sum':
+            return sum(vals)
+        raise Exception('Unexpected aggregation method {}'.format(aggr))
+
+
+
+    def _get_driver_cfg(self):
+        '''
+        load the user-defined application descriptor
+        '''
+
+        try:
+            f = open(CFG_FILE)
+            d = yaml.load(f)
+        except IOError as e:
+            raise Exception(
+                "cannot read configuration from {}:{}".format(CFG_FILE, e.strerror))
+        except yaml.error.YAMLError as e:
+            raise Exception("syntax error in {}: {}".format(CFG_FILE, str(e)))
+        # everything else: raise
+
+        # Valchk
+        assert(DRIVER_NAME in d), \
+            "Missing driver configuration: missing {} section".format(DRIVER_NAME)
+
+        cfg = d[DRIVER_NAME]
+
+        assert 'query' in cfg, 'query missing from driver configuration'
+        assert 'api_host' in cfg, \
+            'api_base_url missing from driver configuration'
+        assert 'api_key' in cfg, \
+            'auth_token missing from driver configuration'
+        assert 'granularity' in cfg, \
+            'granularity missing from driver configuration'
+        assert 'summarization' in cfg, \
+            'summarization missing from driver configuration'
+
+        return cfg
+
+
+if __name__ == '__main__':
+    driver = WaveFront(VERSION, DESC, HAS_CANCEL, PROGRESS_INTERVAL)
+    driver.run()
