@@ -166,7 +166,7 @@ class WaveFront(Measure):
             return aggregated_val
 
         except Exception as e:
-            print("Exception when calling QueryApi->query_api: %s\n" % e)
+            self.debug("Exception when calling QueryApi->query_api: %s\n" % e)
             raise
 
     # helper:  return an aggregate value computed from an input list of values
