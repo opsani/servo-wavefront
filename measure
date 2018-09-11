@@ -6,22 +6,21 @@ import time
 import wavefront_api_client
 import yaml
 
-DESC="Wavefront measure driver for Opsani Optune"
-VERSION="1.0.0"
-HAS_CANCEL=True
-PROGRESS_INTERVAL=5
+DESC = "Wavefront measure driver for Opsani Optune"
+VERSION = "1.0.0"
+HAS_CANCEL = True
+PROGRESS_INTERVAL = 5
 
 
 DFLT_WARMUP = 0
 DFLT_DURATION = 120
 DFLT_TIME_AGGR = 'avg'
-DFLT_METRIC_NAME = 'perf'
-DFLT_METRIC_UNIT = ''
 
 AGGR_OPERATORS = ('avg', 'max', 'min', 'sum')
 
 CFG_FILE = "./config.yaml"
-DRIVER_NAME="wavefront"
+DRIVER_NAME = "wavefront"
+
 
 class WaveFront(Measure):
 
@@ -50,20 +49,13 @@ class WaveFront(Measure):
 
         cfg = self._get_driver_cfg()
 
-        metric_name = cfg.get('metric_name', DFLT_METRIC_NAME)
-        metric_unit = cfg.get('metric_unit', DFLT_METRIC_UNIT)
-
-        return {
-            metric_name: {
-                'unit': metric_unit,
-            }
-        }
+        return {m_name: {'unit': m_data['unit']}
+                for m_name, m_data in cfg['metrics'].items()}
 
     # overwrites super
     def measure(self):
 
         cfg = self._get_driver_cfg()
-        metric_name = cfg.get('metric_name', DFLT_METRIC_NAME)
 
         # parse and valcheck:  control configuration
         control = self.input_data.get('control', {})
@@ -76,43 +68,39 @@ class WaveFront(Measure):
             'Both warmup {} and duration {} must be non-negative'.format(
                 warmup, duration)
 
-        time_aggr = cfg.get('time_aggr', DFLT_TIME_AGGR)
-
-        assert time_aggr in AGGR_OPERATORS, \
-            'Unknown time_aggr {}'.format(time_aggr)
-
-        query = cfg["query"]
-
         # sleep
         self.t_sleep = warmup + duration
         self.debug('Sleeping for {:d} seconds ({:d} warmup + {:d} duration)'.format(
             self.t_sleep, warmup, duration))
         time.sleep(self.t_sleep)
 
-        # query wavefront: measure
-        val = self._query_wavefront(
-            cfg["api_host"], cfg["api_key"], query, time_aggr, duration,
-            cfg["granularity"], cfg["summarization"])
+        metrics = {}
+        annotations = {}
+        for m_name, m_data in cfg['metrics'].items():
+            query = m_data["query"]
+            time_aggr = m_data.get('time_aggr', DFLT_TIME_AGGR)
 
-        # construct result
-        metrics = {
-            metric_name: {
+            # query wavefront: measure
+            val = self._query_wavefront(
+                cfg["api_host"], cfg["api_key"], query, time_aggr, duration,
+                m_data["granularity"], m_data["summarization"])
+
+            # construct result
+            metrics[m_name] = {
                 'value': val,
                 'annotation': query,
             }
-        }
-        annotations = {}
 
         return metrics, annotations
 
     def _get_wf_values(self,
-            client,
-            query,
-            start_time,
-            end_time,
-            granularity,
-            summarization,
-            strict=True):
+                       client,
+                       query,
+                       start_time,
+                       end_time,
+                       granularity,
+                       summarization,
+                       strict=True):
 
         r = client.query_api(
             query,
@@ -123,10 +111,9 @@ class WaveFront(Measure):
             strict=strict)
 
         # Flatten values
-        values =  [d[1] for ts in r.timeseries for d in ts.data]
+        values = [d[1] for ts in r.timeseries for d in ts.data]
 
         return values
-
 
     def _query_wavefront(self, api_host, api_key, query, time_aggr, duration,
                          granularity, summarization):
@@ -156,7 +143,7 @@ class WaveFront(Measure):
             )
 
             assert len(values) > 0, \
-                        'Wavefront query returned no data in timeseries'
+                'Wavefront query returned no data in timeseries'
 
             # summarize result
             aggregated_val = self._aggregate_values(values, time_aggr)
@@ -181,8 +168,6 @@ class WaveFront(Measure):
             return sum(vals)
         raise Exception('Unexpected aggregation method {}'.format(aggr))
 
-
-
     def _get_driver_cfg(self):
         '''
         load the user-defined application descriptor
@@ -200,19 +185,40 @@ class WaveFront(Measure):
 
         # Valchk
         assert(DRIVER_NAME in d), \
-            "Missing driver configuration: missing {} section".format(DRIVER_NAME)
+            "Missing driver configuration: missing {} section".format(
+                DRIVER_NAME)
 
         cfg = d[DRIVER_NAME]
 
-        assert 'query' in cfg, 'query missing from driver configuration'
         assert 'api_host' in cfg, \
             'api_base_url missing from driver configuration'
         assert 'api_key' in cfg, \
             'auth_token missing from driver configuration'
-        assert 'granularity' in cfg, \
-            'granularity missing from driver configuration'
-        assert 'summarization' in cfg, \
-            'summarization missing from driver configuration'
+        assert 'metrics' in cfg, \
+            'metrics missing from driver configuration'
+        assert isinstance(cfg['metrics'], dict), \
+            'invalid driver configuration: metrics must be a dictionary of metrics'
+        assert len(cfg['metrics']) > 0, \
+            'invalid driver configuration: need at least one metric'
+
+        for m_name, m_data in cfg['metrics'].items():
+            assert 'unit' in m_data, \
+                'unit missing from driver configuration for metric {}'\
+                .format(m_name)
+            assert 'granularity' in m_data, \
+                'granularity missing from driver configuration for metric {}'\
+                .format(m_name)
+            assert 'summarization' in m_data, \
+                'summarization missing from driver configuration for metric {}'\
+                .format(m_name)
+            assert 'query' in m_data, \
+                'query missing from driver configuration for metric {}'\
+                .format(m_name)
+
+            time_aggr = m_data.get('time_aggr', DFLT_TIME_AGGR)
+            assert time_aggr in AGGR_OPERATORS, \
+                'invalid driver configuration: unknown time_aggr {} for metrics {}'\
+                .format(time_aggr, m_name)
 
         return cfg
 

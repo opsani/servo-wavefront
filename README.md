@@ -3,7 +3,7 @@ Optune servo driver for Wavefront
 
 Note: this driver requires `measure.py` base class from the Optune servo core. It can be copied or symlinked here as part of packaging
 
-The driver presently returns a single value for a metric named `perf`.  This value is computed from the time series  returned from a single query as follows:
+The driver returns a single value for each metric specified in the config file.  This value is computed from the time series returned from a single query as follows:
 
 * time aggregation:  aggregates the time series to produce a single value using one of these methods:  avg, max, min, sum
 
@@ -15,14 +15,14 @@ The following parameters can be configured for the driver. The configuration sho
 
 * `warmup`:  period after adjustment when a measurement is not taken (sleep). Default 0 seconds. Can be overwritten by OCO backend
 * `duration`:  period of measurement.  Default 120 seconds. Can be overwritten by OCO backend.
-* `metric_name`: metric name. Default `perf`.
-* `metric_unit`: metric unit, returned by the describe command. Default '' (empty string).
-* `query`: a Wavefront metric time series query. Required.
 * `api_host`: a Wavefront API base url, i.e. `https://my-company.wavefront.com`. Required.
 * `api_key`: authentication token to be used when querying Wavefront. Required.
-* `granularity`: Wavefront query granularity. Required. See [Wavefront docs](https://github.com/wavefrontHQ/python-client/blob/master/docs/QueryApi.md#query_api)
-* `summarization`: Wavefront query summarization. Required. See [Wavefront docs](https://github.com/wavefrontHQ/python-client/blob/master/docs/QueryApi.md#query_api)
-* `time_aggr`:  aggregation method for time series pointlists.  One of avg|max|min|sum.  Default `avg`.
+* `metrics`: a dictionary with metrics specifications, keyed by metric name. Each metrics supports the following parameters:
+    * `unit`: metric unit, returned by the describe command. Required.
+    * `granularity`: Wavefront query granularity. Required. See [Wavefront docs](https://github.com/wavefrontHQ/python-client/blob/master/docs/QueryApi.md#query_api)
+    * `summarization`: Wavefront query summarization. Required. See [Wavefront docs](https://github.com/wavefrontHQ/python-client/blob/master/docs/QueryApi.md#query_api)
+    * `query`: a Wavefront metric time series query. Required.
+    * `time_aggr`:  aggregation method for time series pointlists. One of avg|max|min|sum.  Default `avg`.
 
 Example `config.yaml`:
 
@@ -30,13 +30,21 @@ Example `config.yaml`:
 wavefront:
   warmup:    30   # Can be overwritted by OCO backend
   duration:  130  # Can be overwritted by OCO backend
-  metric_name: perf
-  metric_unit: 'request/s'
-  granularity: 'm'
-  summarization: 'LAST'
   api_host: "https://my-company.wavefront.com"
   api_key: "changeme"
-  query:  'avg(ts(appdynamics.apm.overall.calls_per_min,  env=foo and app=my-app))'
-  time_aggr:  avg       # compute time-series value as the average
+  metrics:
+    latency:
+      unit: ms
+      granularity: m
+      summarization: LAST
+      query:  'avg(ts(appdynamics.apm.overall.avg_resp_time_ms, env=foo and app=my-app))'
+      time_aggr:   avg       # compute time-series value as the average
+    throughput:
+      unit: request/s
+      granularity: m
+      summarization: LAST
+      query:  'avg(ts(appdynamics.apm.overall.calls_per_min,  env=foo and app=my-app))'
+      time_aggr:   avg       # compute time-series value as the average
+
 ```
 
