@@ -16,11 +16,17 @@ DFLT_WARMUP = 0
 DFLT_DURATION = 120
 DFLT_TIME_AGGR = 'avg'
 
-AGGR_OPERATORS = ('avg', 'max', 'min', 'sum')
+AGGR_OPERATORS = ('avg', 'max', 'min', 'sum', 'raw')
 
 CFG_FILE = "./config.yaml"
 DRIVER_NAME = "wavefront"
 
+
+def inst_id(s):
+    """get instance id from timeseries data record"""
+    if not s.host:
+        return "0"
+    return s.host # TBD FIXME: use s.tags, e.g. tags["app"], tags["component"], plus s.host
 
 class WaveFront(Measure):
 
@@ -69,10 +75,15 @@ class WaveFront(Measure):
                 warmup, duration)
 
         # sleep
-        self.t_sleep = warmup + duration
-        self.debug('Sleeping for {:d} seconds ({:d} warmup + {:d} duration)'.format(
-            self.t_sleep, warmup, duration))
-        time.sleep(self.t_sleep)
+        if cfg.get("sleep", True):
+            self.t_sleep = warmup + duration + cfg.get("past", 0)
+            self.debug('Sleeping for {:d} seconds ({:d} warmup + {:d} duration)'.format(
+                self.t_sleep, warmup, duration))
+            time.sleep(self.t_sleep)
+
+        now = int(time.time()) - cfg.get("past", 0)
+        start_time = now - duration
+        end_time = now
 
         metrics = {}
         annotations = {}
@@ -82,12 +93,14 @@ class WaveFront(Measure):
 
             # query wavefront: measure
             val = self._query_wavefront(
-                cfg["api_host"], cfg["api_key"], query, time_aggr, duration,
+                cfg["api_host"], cfg["api_key"], query, time_aggr, start_time, end_time,
                 m_data["granularity"], m_data["summarization"])
 
+            vals_key = 'value'
+            if time_aggr == "raw": vals_key = "values"
             # construct result
             metrics[m_name] = {
-                'value': val,
+                vals_key: val,
                 'annotation': query,
             }
 
@@ -100,7 +113,8 @@ class WaveFront(Measure):
                        end_time,
                        granularity,
                        summarization,
-                       strict=True):
+                       strict=True,
+                       raw=False):
 
         r = client.query_api(
             query,
@@ -110,12 +124,15 @@ class WaveFront(Measure):
             summarization=summarization,
             strict=strict)
 
+        if raw:
+            return r.timeseries
+
         # Flatten values
         values = [d[1] for ts in r.timeseries for d in ts.data]
 
         return values
 
-    def _query_wavefront(self, api_host, api_key, query, time_aggr, duration,
+    def _query_wavefront(self, api_host, api_key, query, time_aggr, start_time, end_time,
                          granularity, summarization):
 
         api_cfg = wavefront_api_client.Configuration()
@@ -127,10 +144,7 @@ class WaveFront(Measure):
                 header_name='Authorization',
                 header_value='Bearer ' + api_key))
 
-        now = int(time.time())
-        start_time = now - duration
-        end_time = now
-
+        raw = time_aggr == "raw"
         try:
             values = self._get_wf_values(
                 client,
@@ -139,11 +153,20 @@ class WaveFront(Measure):
                 end_time,
                 granularity,
                 summarization=summarization,
-                strict=True
+                strict=True,
+                raw = raw
             )
 
-            assert len(values) > 0, \
+            # NOTE values can be None if there's no data, not necessarily a zero-length array
+            assert values is not None and len(values) > 0, \
                 'Wavefront query returned no data in timeseries'
+
+            if raw:
+                d = []
+                for s in values:
+                    d.append({"id":inst_id(s), "data": s.data})
+
+                return d
 
             # summarize result
             aggregated_val = self._aggregate_values(values, time_aggr)
