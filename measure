@@ -69,6 +69,7 @@ class WaveFront(Measure):
         warmup = int(control.get('warmup', cfg.get('warmup', DFLT_WARMUP)))
         duration = int(control.get(
             'duration', cfg.get('duration', DFLT_DURATION)))
+        past = int(control.get('past', cfg.get('past', 0)))
 
         assert warmup >= 0 and duration >= 0, \
             'Both warmup {} and duration {} must be non-negative'.format(
@@ -76,12 +77,12 @@ class WaveFront(Measure):
 
         # sleep
         if cfg.get("sleep", True):
-            self.t_sleep = warmup + duration + cfg.get("past", 0)
+            self.t_sleep = warmup + duration + past
             self.debug('Sleeping for {:d} seconds ({:d} warmup + {:d} duration)'.format(
                 self.t_sleep, warmup, duration))
             time.sleep(self.t_sleep)
 
-        now = int(time.time()) - cfg.get("past", 0)
+        now = int(time.time()) - past
         start_time = now - duration
         end_time = now
 
