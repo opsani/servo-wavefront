@@ -2,6 +2,7 @@
 
 from measure import Measure, ST_FAILED
 
+import os
 import time
 import wavefront_api_client
 import yaml
@@ -48,6 +49,9 @@ class WaveFront(Measure):
         err = 'Exiting due to signal: {}'.format(signal)
         self.print_measure_error(err, ST_FAILED)
 
+        # terminate pre_cmd_async, if any
+        self._kill_async_cmd(self.proc_async)
+
         sys.exit(3)
 
     # overwrites super
@@ -75,6 +79,18 @@ class WaveFront(Measure):
             'Both warmup {} and duration {} must be non-negative'.format(
                 warmup, duration)
 
+        pre_cmd_async = cfg.get('pre_cmd_async', None)
+        pre_cmd = cfg.get('pre_cmd', None)
+        post_cmd = cfg.get('post_cmd', None)
+
+        # execute pre_cmd_async, if any
+        if pre_cmd_async is not None:
+            self.proc_async = self._run_command_async(pre_cmd_async)
+
+        # execute pre_cmd, if any
+        if pre_cmd is not None:
+            self._run_command(pre_cmd, pre=True)
+
         # sleep
         if cfg.get("sleep", True):
             self.t_sleep = warmup + duration + past
@@ -88,22 +104,32 @@ class WaveFront(Measure):
 
         metrics = {}
         annotations = {}
-        for m_name, m_data in cfg['metrics'].items():
-            query = m_data["query"]
-            time_aggr = m_data.get('time_aggr', DFLT_TIME_AGGR)
 
-            # query wavefront: measure
-            val = self._query_wavefront(
-                cfg["api_host"], cfg["api_key"], query, time_aggr, start_time, end_time,
-                m_data["granularity"], m_data["summarization"])
+        try:
+            for m_name, m_data in cfg['metrics'].items():
+                query = m_data["query"]
+                time_aggr = m_data.get('time_aggr', DFLT_TIME_AGGR)
 
-            vals_key = 'value'
-            if time_aggr == "raw": vals_key = "values"
-            # construct result
-            metrics[m_name] = {
-                vals_key: val,
-                'annotation': query,
-            }
+                # query wavefront: measure
+                val = self._query_wavefront(
+                    cfg["api_host"], cfg["api_key"], query, time_aggr, start_time, end_time,
+                    m_data["granularity"], m_data["summarization"])
+
+                vals_key = 'value'
+                if time_aggr == "raw": vals_key = "values"
+                # construct result
+                metrics[m_name] = {
+                    vals_key: val,
+                    'annotation': query,
+                }
+        finally:
+            # execute post_cmd, if any
+            if post_cmd is not None:
+                self._run_command(post_cmd, pre=False)
+
+            # terminate pre_cmd_async, if any
+            self._kill_async_cmd(self.proc_async)
+
 
         return metrics, annotations
 
@@ -245,7 +271,6 @@ class WaveFront(Measure):
                 .format(time_aggr, m_name)
 
         return cfg
-
 
 if __name__ == '__main__':
     driver = WaveFront(VERSION, DESC, HAS_CANCEL, PROGRESS_INTERVAL)

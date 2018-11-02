@@ -17,8 +17,11 @@ The following parameters can be configured for the driver. The configuration sho
 * `duration`:  period of measurement.  Default 120 seconds. Can be overwritten by OCO backend.
 * `api_host`: a Wavefront API base url, i.e. `https://my-company.wavefront.com`. Required.
 * `api_key`: authentication token to be used when querying Wavefront. Required.
-* `past`: additional time skew to add, in seconds. If set, take the time series between (now-past-duration) and (now-past). NOTE the time stamps in the data will not be changed, they will still be as reported by the Wavefront API. Optional, default is 0.
+* `past`: additional time skew to add, in seconds. If set, take the time series between (now-past-duration) and (now-past). NOTE the time stamps in the data will not be changed, they will still be as reported by the Wavefront API. Optional, default is 0. Can be overwritten by OCO backend.
 * `sleep`: disable sleeping if set to `false`. This is for use in testing only, allows taking time series from past data without waiting. Optional, default=`true`.
+* `pre_cmd_async`:  Bash shell command to execute prior to warmup.  This optional command may be a string or a list.  This command is executed asynchronously with stdout/stderr directed to /dev/null.  If the process is still running after measurement, it is terminated.  This command is suitable for generating load during measurement, typically for testing purposes, as in the example above.
+* `pre_cmd`:  Bash shell command to execute prior to warmup.  This optional command may be a string or a list.
+* `post_cmd`:  Bash shell command to execute after measurement.  This optional command may be a string or a list.
 * `metrics`: a dictionary with metrics specifications, keyed by metric name. Each metric supports the following parameters:
     * `unit`: metric unit, returned by the describe command. Required.
     * `granularity`: Wavefront query granularity. Required. See [Wavefront docs](https://github.com/wavefrontHQ/python-client/blob/master/docs/QueryApi.md#query_api)
@@ -34,6 +37,7 @@ wavefront:
   duration:  130  # Can be overwritted by OCO backend
   api_host: "https://my-company.wavefront.com"
   api_key: "changeme"
+  pre_cmd_async: 'ab -c 10 -rkl -t 1000 http://c4:8080/' # Optional
   metrics:
     latency:
       unit: ms
