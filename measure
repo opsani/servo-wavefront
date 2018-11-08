@@ -85,7 +85,13 @@ class WaveFront(Measure):
 
         # execute pre_cmd_async, if any
         if pre_cmd_async is not None:
-            self.proc_async = self._run_command_async(pre_cmd_async)
+            if isinstance(pre_cmd_async, list):
+                cmds = pre_cmd_async
+            else:
+                cmds = [pre_cmd_async]
+            self.proc_async = [self._run_command_async(x) for x in cmds]
+
+
 
         # execute pre_cmd, if any
         if pre_cmd is not None:
@@ -128,7 +134,8 @@ class WaveFront(Measure):
                 self._run_command(post_cmd, pre=False)
 
             # terminate pre_cmd_async, if any
-            self._kill_async_cmd(self.proc_async)
+            if self.proc_async:
+                for x in self.proc_async: self._kill_async_cmd(x)
 
 
         return metrics, annotations
