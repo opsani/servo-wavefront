@@ -171,6 +171,12 @@ class WaveFront(Measure):
 
         api_cfg = wavefront_api_client.Configuration()
         api_cfg.host = api_host
+        env = os.environ
+        api_cfg.proxy = env.get("HTTPS_PROXY",
+            env.get("https_proxy",
+                    env.get("HTTP_PROXY",
+                            env.get("http_proxy", None))))
+
 
         client = wavefront_api_client.QueryApi(
             wavefront_api_client.ApiClient(
