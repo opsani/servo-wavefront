@@ -83,6 +83,14 @@ class WaveFront(Measure):
         pre_cmd = cfg.get('pre_cmd', None)
         post_cmd = cfg.get('post_cmd', None)
 
+        # If allow_unsafe_overwrites is set to True, overwrite pre/post
+        # commands with user data suplied in input
+        if cfg.get('allow_unsafe_overwrites', False):
+            user_data = control.get('userdata', {})
+            pre_cmd_async = user_data.get('pre_cmd_async', pre_cmd_async)
+            pre_cmd = user_data.get('pre_cmd', pre_cmd)
+            post_cmd = user_data.get('post_cmd', post_cmd)
+
         # execute pre_cmd_async, if any
         if pre_cmd_async is not None:
             if isinstance(pre_cmd_async, list):
