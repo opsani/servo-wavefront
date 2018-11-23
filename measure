@@ -128,9 +128,17 @@ class WaveFront(Measure):
                 time_aggr = m_data.get('time_aggr', DFLT_TIME_AGGR)
 
                 # query wavefront: measure
-                val = self._query_wavefront(
-                    cfg["api_host"], cfg["api_key"], query, time_aggr, start_time, end_time,
-                    m_data["granularity"], m_data["summarization"])
+                try:
+                    val = self._query_wavefront(
+                        cfg["api_host"], cfg["api_key"], query, time_aggr, start_time, end_time,
+                        m_data["granularity"], m_data["summarization"])
+                except Exception as e:
+                    # if raw is requested, treat a failure as empty data,
+                    # otherwise raise the exception
+                    if time_aggr == "raw":
+                        val = []
+                    else:
+                        raise
 
                 vals_key = 'value'
                 if time_aggr == "raw": vals_key = "values"
