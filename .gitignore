@@ -1,3 +1,8 @@
 __pycache__/
 config.yaml
 measure.py
+adjust
+adjust.py
+auth
+servo
+settings.json
