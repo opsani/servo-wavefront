@@ -39,6 +39,9 @@ class WaveFront(Measure):
             stage=None,
             stageprogress=None):
 
+        if not hasattr(self, 't_sleep') or self.t_sleep == 0:
+            return
+
         # update progress based on how much time has elapsed
         t_taken = time.time() - self.t_measure_start
         self.progress = int(min(100.0, 100.0*((t_taken)/self.t_sleep)))
