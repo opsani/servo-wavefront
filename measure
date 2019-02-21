@@ -31,6 +31,10 @@ def inst_id(s):
 
 class WaveFront(Measure):
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.proc_async = None
+
     # overwrites super:  update progress before printing it
     def print_progress(
             self,
@@ -53,7 +57,8 @@ class WaveFront(Measure):
         self.print_measure_error(err, ST_FAILED)
 
         # terminate pre_cmd_async, if any
-        self._kill_async_cmd(self.proc_async)
+        if self.proc_async:
+            self._kill_async_cmd(self.proc_async)
 
         sys.exit(3)
 
