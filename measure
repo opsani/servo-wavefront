@@ -186,7 +186,10 @@ class WaveFront(Measure):
             return r.timeseries
 
         # Flatten values
-        values = [d[1] for ts in r.timeseries for d in ts.data]
+        if r.timeseries is not None:
+            values = [d[1] for ts in r.timeseries for d in ts.data]
+        else:
+            values = []
 
         return values
 
@@ -221,11 +224,13 @@ class WaveFront(Measure):
                 raw = raw
             )
 
-            # NOTE values can be None if there's no data, not necessarily a zero-length array
-            assert values is not None and len(values) > 0, \
-                'Wavefront query returned no data in timeseries'
 
             if raw:
+                # NOTE values can be None if there's no data, not necessarily a zero-length array
+                assert values is not None and len(values) > 0, \
+                    'Wavefront query returned no data in timeseries, query: {}'\
+                        .format(query)
+
                 d = []
                 for s in values:
                     d.append({"id":inst_id(s), "data": s.data})
@@ -245,6 +250,10 @@ class WaveFront(Measure):
 
     # helper:  return an aggregate value computed from an input list of values
     def _aggregate_values(self, vals, aggr):
+        # Treat empty data as 0
+        if vals is None or len(vals) == 0:
+            return 0
+
         if aggr == 'avg':
             return sum(vals) / float(len(vals))
         if aggr == 'max':
