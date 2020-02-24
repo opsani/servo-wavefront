@@ -3,6 +3,7 @@
 from measure import Measure, ST_FAILED
 
 import os
+import sys
 import time
 import wavefront_api_client
 import yaml
@@ -271,7 +272,7 @@ class WaveFront(Measure):
 
         try:
             f = open(CFG_FILE)
-            d = yaml.load(f)
+            d = yaml.safe_load(f)
         except IOError as e:
             raise Exception(
                 "cannot read configuration from {}:{}".format(CFG_FILE, e.strerror))
