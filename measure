@@ -288,14 +288,18 @@ class WaveFront(Measure):
 
         assert 'api_host' in cfg, \
             'api_base_url missing from driver configuration'
-        assert 'api_key' in cfg, \
-            'auth_token missing from driver configuration'
         assert 'metrics' in cfg, \
             'metrics missing from driver configuration'
         assert isinstance(cfg['metrics'], dict), \
             'invalid driver configuration: metrics must be a dictionary of metrics'
         assert len(cfg['metrics']) > 0, \
             'invalid driver configuration: need at least one metric'
+
+        if 'api_key_path' in cfg:
+            with open(cfg['api_key_path']) as tok_file:
+                cfg['api_key'] = tok_file.read().strip()
+        assert 'api_key' in cfg, \
+            'api_key missing from driver configuration'
 
         for m_name, m_data in cfg['metrics'].items():
             assert 'unit' in m_data, \
@@ -315,6 +319,7 @@ class WaveFront(Measure):
             assert time_aggr in AGGR_OPERATORS, \
                 'invalid driver configuration: unknown time_aggr {} for metrics {}'\
                 .format(time_aggr, m_name)
+
 
         return cfg
 
